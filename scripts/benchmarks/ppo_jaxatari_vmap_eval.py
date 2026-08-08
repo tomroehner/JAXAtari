@@ -114,6 +114,15 @@ def evaluate(
 
     # first episode video capture
     # states_until_done = first_obs[:first_done[0] + 1, 0]  # shape: (time_until_done, 1, H, W)
-    env_states_until_done = jax.tree.map(lambda x: x[:first_done[0] + 1], first_states.atari_state.atari_state.env_state)
+    # env_states_until_done = jax.tree.map(lambda x: x[:first_done[0] + 1], first_states.atari_state.atari_state.env_state)
+
+    # first episode video capture (fix to account for the case where the first episode does not finish within 10,000 steps)
+    # Check if the first evaluation episode actually finished
+    is_done = bool(jnp.any(dones[:, 0]).item())
+    
+    # If it finished, slice at the done index. If not, slice to the end of the array (10,000).
+    end_idx = int(first_done[0].item()) if is_done else (dones.shape[0] - 1)
+    
+    env_states_until_done = jax.tree.map(lambda x: x[:end_idx + 1], first_states.atari_state.atari_state.env_state)
 
     return episodic_returns, env_states_until_done
