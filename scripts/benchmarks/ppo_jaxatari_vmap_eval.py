@@ -19,6 +19,7 @@ def evaluate(
     seed=1,
     object_centric: bool = False,  # ppo+ewc only; whether the environment is object-centric
     padding_width: int = 0,    # ppo+ewc only; padding width for the object-centric observation space
+    crl: bool = False,  # flag to indicate if we are in the CRL setting
 ):
     env: JaxEnvironment | JaxatariWrapper = make_env(env_id, seed, 1)()
     _Network, _Actor, _Critic = Model
@@ -54,7 +55,7 @@ def evaluate(
     key, reset_key = jax.random.split(key)
     next_obs, handle = wrapped_reset(reset_key)
     network = _Network()
-    actor = _Actor(action_dim=env.action_space().n)
+    actor = _Actor(action_dim=env.action_space().n) if not crl else _Actor(action_dim=18)
     critic = _Critic()
     key, network_key, actor_key, critic_key = jax.random.split(key, 4)
     key, network_key_2, actor_key_2, critic_key_2 = jax.random.split(key, 4)
