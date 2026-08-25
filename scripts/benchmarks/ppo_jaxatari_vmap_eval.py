@@ -17,28 +17,17 @@ def evaluate(
     Model: nn.Module,
     capture_video: bool = True,
     seed=1,
-    object_centric: bool = False,  # ppo+ewc only; whether the environment is object-centric
-    padding_width: int = 0,    # ppo+ewc only; padding width for the object-centric observation space
-    crl: bool = False,  # flag to indicate if we are in the CRL setting
 ):
     env: JaxEnvironment | JaxatariWrapper = make_env(env_id, seed, 1)()
     _Network, _Actor, _Critic = Model
     key = jax.random.key(seed)
-
-    def pad_obs(obs):
-        """Zero-pad object-centric observations"""
-        return jnp.pad(obs, ((0, 0), (0, padding_width)))
 
     @jax.jit
     def wrapped_reset(key):
         """wrappes the reset function of the environment to correct the observation shape"""
         next_obs, state = env.reset(key)
         # NNs require shape (B, F, H, W), where B is the batch size and F is the frame stack size
-        next_obs = next_obs.squeeze()[None, ...]
-        # pad observations for object-centric environments to have consistent shape across tasks
-        if object_centric:
-            next_obs = pad_obs(next_obs)
-        return next_obs, state
+        return next_obs.squeeze()[None, ...], state
 
     @jax.jit 
     def wrapped_step(state, action):
@@ -46,16 +35,12 @@ def evaluate(
         next_obs, next_state, reward, terminated, truncated, info =  env.step(state, action.squeeze())
         done = jnp.logical_or(terminated, truncated)
         # NNs require shape (B, F, H, W), where B is the batch size and F is the frame stack size
-        next_obs = next_obs.squeeze()[None, ...]
-        # pad observations for object-centric environments to have consistent shape across tasks
-        if object_centric:
-            next_obs = pad_obs(next_obs)
-        return next_obs, next_state, reward, done, info
+        return next_obs.squeeze()[None, ...], next_state, reward, done, info
 
     key, reset_key = jax.random.split(key)
     next_obs, handle = wrapped_reset(reset_key)
     network = _Network()
-    actor = _Actor(action_dim=env.action_space().n) if not crl else _Actor(action_dim=18)
+    actor = _Actor(action_dim=env.action_space().n)
     critic = _Critic()
     key, network_key, actor_key, critic_key = jax.random.split(key, 4)
     key, network_key_2, actor_key_2, critic_key_2 = jax.random.split(key, 4)
@@ -115,15 +100,6 @@ def evaluate(
 
     # first episode video capture
     # states_until_done = first_obs[:first_done[0] + 1, 0]  # shape: (time_until_done, 1, H, W)
-    # env_states_until_done = jax.tree.map(lambda x: x[:first_done[0] + 1], first_states.atari_state.atari_state.env_state)
-
-    # first episode video capture (fix to account for the case where the first episode does not finish within 10,000 steps)
-    # Check if the first evaluation episode actually finished
-    is_done = bool(jnp.any(dones[:, 0]).item())
-    
-    # If it finished, slice at the done index. If not, slice to the end of the array (10,000).
-    end_idx = int(first_done[0].item()) if is_done else (dones.shape[0] - 1)
-    
-    env_states_until_done = jax.tree.map(lambda x: x[:end_idx + 1], first_states.atari_state.atari_state.env_state)
+    env_states_until_done = jax.tree.map(lambda x: x[:first_done[0] + 1], first_states.atari_state.atari_state.env_state)
 
     return episodic_returns, env_states_until_done
